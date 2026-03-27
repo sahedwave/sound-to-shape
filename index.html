@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>TAKRAR • Real Physics</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Space+Grotesk:wght@500&display=swap');
-body { margin:0; overflow:hidden; background:#05050a; font-family:'Inter',sans-serif; color:#fff; }
-#canvas { position:absolute; top:0; left:0; width:100%; height:100%; }
+body { margin:0; min-height:100vh; min-height:100dvh; overflow:hidden; background:#05050a; font-family:'Inter',sans-serif; color:#fff; }
+#canvas { position:absolute; top:0; left:0; width:100%; height:100%; touch-action:none; }
 
 .overlay { 
   position:absolute; top:0; left:0; width:100%; height:100%; 
@@ -145,6 +145,84 @@ body { margin:0; overflow:hidden; background:#05050a; font-family:'Inter',sans-s
 }
 
 @keyframes pulse { 50% { box-shadow:0 0 30px #00ffcc; } }
+
+#controlsToggleBtn {
+  display: none;
+  position: absolute;
+  top: 78px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  background: rgba(10, 15, 30, 0.88);
+  color: #fff;
+  border: 1px solid rgba(0, 255, 200, 0.2);
+  padding: 9px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  pointer-events: all;
+}
+
+@media (max-width: 640px) {
+  #controlsToggleBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    top: max(60px, calc(env(safe-area-inset-top) + 50px));
+  }
+
+  .title {
+    top: max(18px, calc(env(safe-area-inset-top) + 8px));
+    font-size: 28px;
+  }
+
+  .controls {
+    bottom: max(92px, calc(env(safe-area-inset-bottom) + 78px));
+    width: min(calc(100vw - 24px), 360px);
+    min-width: 0;
+    padding: 14px;
+  }
+
+  .controls.mobile-collapsed {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(18px);
+  }
+
+  .mode-toggle,
+  .slider-row,
+  .input-group {
+    width: 100%;
+  }
+
+  .mode-btn {
+    flex: 1;
+    padding: 8px 12px;
+  }
+
+  .slider-row,
+  .input-group {
+    flex-wrap: wrap;
+  }
+
+  #freqValue,
+  #setFreqBtn {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .mic-btn {
+    bottom: max(16px, env(safe-area-inset-bottom));
+    width: min(calc(100vw - 24px), 320px);
+    padding: 14px 18px;
+  }
+
+  .info {
+    bottom: max(78px, calc(env(safe-area-inset-bottom) + 64px));
+    width: calc(100vw - 24px);
+  }
+}
 </style>
 </head>
 <body>
@@ -152,6 +230,7 @@ body { margin:0; overflow:hidden; background:#05050a; font-family:'Inter',sans-s
 
 <div class="overlay">
   <div class="title">TAKRAR</div>
+  <button id="controlsToggleBtn" type="button">☰ Controls</button>
 
   <div class="controls">
     <div class="mode-toggle">
@@ -172,7 +251,7 @@ body { margin:0; overflow:hidden; background:#05050a; font-family:'Inter',sans-s
   </div>
 
   <button class="mic-btn" id="micBtn">🎤 TAP TO LISTEN</button>
-  <div class="info">Real frequency (0 Hz – 1 MHz) → Plate vibration → Particles self-organize</div>
+  <div class="info" id="infoText">Real frequency (0 Hz – 1 MHz) → Plate vibration → Particles self-organize</div>
 </div>
 
 <script>
@@ -246,20 +325,83 @@ async function init() {
   particles = new THREE.Points(pGeo, pMat);
   scene.add(particles);
 
-  // Mouse orbit
+  // Orbit + pinch controls
   let isDragging = false, prevX = 0, prevY = 0, azimuth = Math.PI * 0.7, elevation = Math.PI * 0.42;
+  let orbitRadius = 235;
+  const activePointers = new Map();
+  let pinchDistance = 0;
   function updateCamera() {
-    const radius = 235;
-    camera.position.x = radius * Math.sin(elevation) * Math.sin(azimuth);
-    camera.position.y = radius * Math.cos(elevation) + 30;
-    camera.position.z = radius * Math.sin(elevation) * Math.cos(azimuth);
+    camera.position.x = orbitRadius * Math.sin(elevation) * Math.sin(azimuth);
+    camera.position.y = orbitRadius * Math.cos(elevation) + 30;
+    camera.position.z = orbitRadius * Math.sin(elevation) * Math.cos(azimuth);
     camera.lookAt(0, 18, 0);
   }
   updateCamera();
 
-  window.addEventListener('mousedown', e => { isDragging = true; prevX = e.clientX; prevY = e.clientY; });
-  window.addEventListener('mouseup', () => isDragging = false);
-  window.addEventListener('mousemove', e => {
+  function setControlsCollapsed(collapsed) {
+    const controls = document.querySelector('.controls');
+    const toggleBtn = document.getElementById('controlsToggleBtn');
+    const mobile = window.matchMedia('(max-width: 640px)').matches;
+    controls.classList.toggle('mobile-collapsed', mobile && collapsed);
+    toggleBtn.textContent = mobile && collapsed ? '☰ Tune' : '✕ Tune';
+  }
+
+  const controlsToggleBtn = document.getElementById('controlsToggleBtn');
+  const infoText = document.getElementById('infoText');
+  controlsToggleBtn.addEventListener('click', () => {
+    document.querySelector('.controls').classList.toggle('mobile-collapsed');
+    setControlsCollapsed(document.querySelector('.controls').classList.contains('mobile-collapsed'));
+  });
+  if (window.matchMedia('(max-width: 640px)').matches) setControlsCollapsed(true);
+  if (window.matchMedia('(max-width: 640px)').matches) infoText.textContent = 'Drag to orbit the plate · pinch to zoom · open Tune when you need manual controls';
+
+  function getPinchDistance() {
+    const pts = [...activePointers.values()];
+    if (pts.length < 2) return 0;
+    return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  }
+
+  canvas.addEventListener('pointerdown', e => {
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activePointers.size === 1) {
+      isDragging = true;
+      prevX = e.clientX;
+      prevY = e.clientY;
+    } else if (activePointers.size === 2) {
+      isDragging = false;
+      pinchDistance = getPinchDistance();
+    }
+    try { canvas.setPointerCapture(e.pointerId); } catch {}
+  });
+  window.addEventListener('pointerup', e => {
+    activePointers.delete(e.pointerId);
+    if (activePointers.size <= 1) pinchDistance = 0;
+    if (activePointers.size === 1) {
+      const remaining = [...activePointers.values()][0];
+      prevX = remaining.x;
+      prevY = remaining.y;
+    }
+    isDragging = activePointers.size === 1;
+    if (e?.pointerId != null) {
+      try { canvas.releasePointerCapture(e.pointerId); } catch {}
+    }
+  });
+  window.addEventListener('pointercancel', e => {
+    activePointers.delete(e.pointerId);
+    pinchDistance = 0;
+    isDragging = false;
+  });
+  window.addEventListener('pointermove', e => {
+    if (activePointers.has(e.pointerId)) activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activePointers.size === 2) {
+      const dist = getPinchDistance();
+      if (pinchDistance) {
+        orbitRadius = Math.max(150, Math.min(360, orbitRadius - (dist - pinchDistance) * 0.45));
+        updateCamera();
+      }
+      pinchDistance = dist;
+      return;
+    }
     if (!isDragging) return;
     azimuth += (e.clientX - prevX) * 0.003;
     elevation = Math.max(0.2, Math.min(1.5, elevation - (e.clientY - prevY) * 0.003));
@@ -271,6 +413,10 @@ async function init() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    setControlsCollapsed(document.querySelector('.controls').classList.contains('mobile-collapsed'));
+    infoText.textContent = window.matchMedia('(max-width: 640px)').matches
+      ? 'Drag to orbit the plate · pinch to zoom · open Tune when you need manual controls'
+      : 'Real frequency (0 Hz – 1 MHz) → Plate vibration → Particles self-organize';
   });
 
   // Mode buttons
@@ -339,13 +485,15 @@ function switchMode(manual) {
   if (manual) {
     micBtn.classList.remove('active');
     manualBtn.classList.add('active');
-    document.querySelector('.controls').style.display = 'flex'; // ensure visible
+    document.querySelector('.controls').style.display = 'flex';
+    setControlsCollapsed(false);
     micControlBtn.style.display = 'none';
     isListening = false;
   } else {
     micBtn.classList.add('active');
     manualBtn.classList.remove('active');
     micControlBtn.style.display = 'block';
+    if (!window.matchMedia('(max-width: 640px)').matches) setControlsCollapsed(false);
   }
 }
 
